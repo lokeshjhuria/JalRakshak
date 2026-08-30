@@ -14,12 +14,18 @@ type WaterReport = {
   chlorine: number;
   status: string;
   summary: string;
+  latitude: number;
+  longitude: number;
 };
 
 const areaNames = ['North District', 'Riverside', 'Lakeview', 'Green Valley', 'South Ward', 'Harbor City'];
 
+function getNearestZone(latitude: number, longitude: number): string {
+  const zoneIndex = Math.abs(Math.round(latitude + longitude)) % areaNames.length;
+  return areaNames[zoneIndex];
+}
+
 function buildWaterReport(latitude: number, longitude: number): WaterReport {
-  const index = Math.abs(Math.round(latitude + longitude)) % areaNames.length;
   const quality = Math.max(78, Math.min(99, Math.round(92 + Math.sin(latitude * 8) * 6 + Math.cos(longitude * 10) * 3)));
   const ph = Number((6.8 + Math.sin(latitude * 4) * 0.9 + Math.cos(longitude * 5) * 0.5).toFixed(1));
   const turbidity = Number((0.7 + Math.abs(Math.sin(longitude * 6)) * 1.8).toFixed(1));
@@ -27,18 +33,20 @@ function buildWaterReport(latitude: number, longitude: number): WaterReport {
   const status = quality >= 90 ? 'Healthy' : quality >= 80 ? 'Monitor' : 'Alert';
 
   return {
-    area: areaNames[index],
+    area: getNearestZone(latitude, longitude),
     quality,
     ph,
     turbidity,
     chlorine,
     status,
+    latitude,
+    longitude,
     summary:
       quality >= 90
-        ? 'Water conditions are stable and safe for routine community use.'
+        ? 'Water conditions are stable and safe for routine community use. Recommended chlorine residual and turbidity remain within normal operating range.'
         : quality >= 80
-          ? 'Conditions are acceptable but should be watched closely during peak demand.'
-          : 'Water quality requires attention and immediate operational review.',
+          ? 'Conditions are acceptable but should be watched closely during peak demand and after heavy rainfall.'
+          : 'Water quality requires attention and immediate operational review. Check treatment efficiency and distribution integrity.',
   };
 }
 
@@ -61,12 +69,25 @@ const features = [
 ];
 
 const steps = [
-  'Deploy smart sensor stations and connect data sources.',
-  'View live water health scores and anomaly alerts in real time.',
-  'Coordinate action plans and safeguard communities faster.',
+  'Deploy smart sensor stations and connect validated field data with utility control systems.',
+  'Track pH, turbidity, residual chlorine, and contamination trends in real time.',
+  'Trigger corrective actions and protect public health with faster response planning.',
 ];
 
 const partners = ['NWMDC', 'CleanFlow', 'AquaSafe', 'Harbor Labs', 'GreenWater'];
+
+const purificationSteps = [
+  'Coagulation and flocculation to remove suspended solids.',
+  'Sedimentation and filtration for safe physical treatment.',
+  'Disinfection and pH balancing to protect public health.',
+];
+
+const standards = [
+  { label: 'pH range', value: '6.5 - 8.5' },
+  { label: 'Turbidity', value: '< 1 NTU' },
+  { label: 'Residual chlorine', value: '0.5 - 1.5 ppm' },
+  { label: 'Lead limit', value: '< 10 ppb' },
+];
 
 const dashboardStats = [
   { label: 'Active stations', value: '128' },
@@ -307,6 +328,13 @@ function App() {
                 <span className="status-pill success">{report.status}</span>
               </div>
 
+              <div className="location-details">
+                <span>Live coordinates</span>
+                <strong>
+                  {report.latitude.toFixed(4)}°, {report.longitude.toFixed(4)}°
+                </strong>
+              </div>
+
               <div className="report-grid">
                 <div>
                   <span>Water quality</span>
@@ -417,6 +445,31 @@ function App() {
                 <p>{feature.text}</p>
               </article>
             ))}
+          </div>
+        </section>
+
+        <section className="section-block info-grid">
+          <div className="info-panel">
+            <span className="eyebrow">Purification process</span>
+            <h2>Reliable treatment from source to tap.</h2>
+            <ul className="purification-list">
+              {purificationSteps.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="info-panel standards-panel">
+            <span className="eyebrow">Quality standards</span>
+            <h2>Measured against regulatory benchmarks.</h2>
+            <div className="standards-grid">
+              {standards.map((item) => (
+                <div key={item.label} className="standard-box">
+                  <span>{item.label}</span>
+                  <strong>{item.value}</strong>
+                </div>
+              ))}
+            </div>
           </div>
         </section>
 
