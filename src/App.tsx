@@ -1,4 +1,5 @@
-import { ChangeEvent, FormEvent, useState } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useState } from 'react';
+import { createClient } from '@supabase/supabase-js';
 
 const metrics = [
   { value: '24/7', label: 'Live monitoring' },
@@ -18,7 +19,20 @@ type WaterReport = {
   longitude: number;
 };
 
+type AuthMode = 'login' | 'signup';
+type View = 'landing' | 'auth' | 'dashboard';
+
+type UserProfile = {
+  id: string;
+  name: string;
+  email: string;
+  createdAt: string;
+};
+
 const areaNames = ['North District', 'Riverside', 'Lakeview', 'Green Valley', 'South Ward', 'Harbor City'];
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
 function getNearestZone(latitude: number, longitude: number): string {
   const zoneIndex = Math.abs(Math.round(latitude + longitude)) % areaNames.length;
@@ -95,13 +109,48 @@ const dashboardStats = [
   { label: 'Alerts resolved', value: '31' },
 ];
 
+const authStorageKey = 'jalrakshak-users';
+
+function readStoredUsers(): UserProfile[] {
+  if (typeof window === 'undefined') {
+    return [];
+  }
+
+  try {
+    const saved = window.localStorage.getItem(authStorageKey);
+    return saved ? (JSON.parse(saved) as UserProfile[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 function App() {
-  const [view, setView] = useState<'landing' | 'login' | 'dashboard'>('landing');
-  const [formData, setFormData] = useState({ email: '', password: '' });
+  const [view, setView] = useState<View>('landing');
+  const [authMode, setAuthMode] = useState<AuthMode>('login');
+  const [formData, setFormData] = useState({ fullName: '', email: '', password: '' });
   const [error, setError] = useState('');
   const [report, setReport] = useState<WaterReport | null>(null);
   const [locationLoading, setLocationLoading] = useState(false);
   const [locationError, setLocationError] = useState('');
+  const [user, setUser] = useState<UserProfile | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const storedUser = window.localStorage.getItem('jalrakshak-current-user');
+    if (storedUser) {
+      setUser(JSON.parse(storedUser) as UserProfile);
+      setView('dashboard');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (view === 'dashboard') {
+      detectLocation();
+    }
+  }, [view]);
 
   const handleInputChange = (event: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = event.target;
@@ -133,25 +182,102 @@ function App() {
     );
   };
 
-  const handleLogin = (event: FormEvent) => {
-    event.preventDefault();
-
-    if (!formData.email.trim() || !formData.password.trim()) {
-      setError('Please enter both email and password.');
+  const saveUserToLocalStorage = (profile: UserProfile) => {
+    if (typeof window === 'undefined') {
       return;
     }
 
+    const users = readStoredUsers();
+    const filteredUsers = users.filter((entry) => entry.email.toLowerCase() !== profile.email.toLowerCase());
+    filteredUsers.push(profile);
+    window.localStorage.setItem(authStorageKey, JSON.stringify(filteredUsers));
+    window.localStorage.setItem('jalrakshak-current-user', JSON.stringify(profile));
+  };
+
+  const handleAuthSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+
+    const trimmedName = formData.fullName.trim();
+    const trimmedEmail = formData.email.trim();
+    const trimmedPassword = formData.password.trim();
+
+    if (!trimmedEmail || !trimmedPassword || (authMode === 'signup' && !trimmedName)) {
+      setError(authMode === 'signup' ? 'Please enter your name, email, and password.' : 'Please enter both email and password.');
+      return;
+    }
+
+    if (trimmedPassword.length < 6) {
+      setError('Password must be at least 6 characters long.');
+      return;
+    }
+
+    const profile: UserProfile = {
+      id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}`,
+      name: trimmedName || 'JalRakshak User',
+      email: trimmedEmail,
+      createdAt: new Date().toISOString(),
+    };
+
+    try {
+      if (supabase) {
+        if (authMode === 'signup') {
+          const { data, error: signUpError } = await supabase.auth.signUp({
+            email: trimmedEmail,
+            password: trimmedPassword,
+            options: { data: { full_name: profile.name } },
+          });
+
+          if (signUpError) {
+            throw signUpError;
+          }
+
+          if (data.user) {
+            profile.id = data.user.id;
+            await supabase.from('profiles').upsert({
+              id: profile.id,
+              full_name: profile.name,
+              email: profile.email,
+              created_at: profile.createdAt,
+            });
+          }
+        } else {
+          const { data, error: signInError } = await supabase.auth.signInWithPassword({
+            email: trimmedEmail,
+            password: trimmedPassword,
+          });
+
+          if (signInError) {
+            throw signInError;
+          }
+
+          if (data.user) {
+            profile.id = data.user.id;
+            profile.name = data.user.user_metadata?.full_name || profile.name;
+          }
+        }
+      }
+    } catch (supabaseError) {
+      console.warn('Supabase auth unavailable, using local fallback:', supabaseError);
+    }
+
+    saveUserToLocalStorage(profile);
+    setUser(profile);
     setError('');
+    setFormData({ fullName: '', email: '', password: '' });
     setView('dashboard');
   };
 
   const handleLogout = () => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem('jalrakshak-current-user');
+    }
     setView('landing');
-    setFormData({ email: '', password: '' });
+    setUser(null);
+    setFormData({ fullName: '', email: '', password: '' });
     setError('');
   };
 
-  if (view === 'login') {
+  if (view === 'auth') {
     return (
       <div className="auth-shell">
         <div className="auth-card">
@@ -159,16 +285,46 @@ function App() {
             <div className="brand-icon">J</div>
             <div>
               <span className="brand-name">JalRakshak</span>
-              <small>Secure access</small>
+              <small>{authMode === 'login' ? 'Secure access' : 'Create account'}</small>
             </div>
           </div>
 
           <div className="auth-header">
-            <span className="eyebrow">Welcome back</span>
-            <h2>Sign in to your portal</h2>
+            <span className="eyebrow">{authMode === 'login' ? 'Welcome back' : 'Join us'}</span>
+            <h2>{authMode === 'login' ? 'Sign in to your portal' : 'Create your account'}</h2>
           </div>
 
-          <form onSubmit={handleLogin} className="auth-form">
+          <div className="auth-toggle">
+            <button
+              type="button"
+              className={authMode === 'login' ? 'toggle-tab active' : 'toggle-tab'}
+              onClick={() => setAuthMode('login')}
+            >
+              Login
+            </button>
+            <button
+              type="button"
+              className={authMode === 'signup' ? 'toggle-tab active' : 'toggle-tab'}
+              onClick={() => setAuthMode('signup')}
+            >
+              Sign up
+            </button>
+          </div>
+
+          <form onSubmit={handleAuthSubmit} className="auth-form">
+            {authMode === 'signup' && (
+              <label>
+                Full name
+                <input
+                  type="text"
+                  name="fullName"
+                  placeholder="Enter your full name"
+                  value={formData.fullName}
+                  onChange={handleInputChange}
+                />
+              </label>
+            )}
+
             <label>
               Email address
               <input
@@ -193,7 +349,9 @@ function App() {
 
             {error && <p className="error-text">{error}</p>}
 
-            <button type="submit" className="primary-button auth-submit">Login</button>
+            <button type="submit" className="primary-button auth-submit">
+              {authMode === 'login' ? 'Login' : 'Create account'}
+            </button>
           </form>
 
           <div className="auth-footer">
@@ -224,41 +382,67 @@ function App() {
           </div>
         </header>
 
+        <nav className="dashboard-nav">
+          <button type="button" className="nav-pill active">Home</button>
+          <button type="button" className="nav-pill">Water quality</button>
+          <button type="button" className="nav-pill">Alerts</button>
+          <button type="button" className="nav-pill">Availability</button>
+        </nav>
+
         <main className="dashboard-grid">
           <section className="dashboard-panel large-panel">
             <div className="panel-head">
               <div>
                 <span className="eyebrow">System overview</span>
-                <h3>Water network health</h3>
+                <h3>{user?.name ? `Welcome, ${user.name}` : 'Water network health'}</h3>
               </div>
               <span className="status-pill">Updated 2 min ago</span>
             </div>
 
             <div className="score-ring dashboard-score">
               <div className="score-core">
-                <strong>96%</strong>
-                <span>Safe</span>
+                <strong>{report?.quality ?? '96'}%</strong>
+                <span>{report?.status ?? 'Safe'}</span>
               </div>
             </div>
+
+            {report && (
+              <div className="live-report-summary">
+                <div>
+                  <span>Current zone</span>
+                  <strong>{report.area}</strong>
+                </div>
+                <div>
+                  <span>Location</span>
+                  <strong>{report.latitude.toFixed(4)}, {report.longitude.toFixed(4)}</strong>
+                </div>
+              </div>
+            )}
           </section>
 
           <section className="dashboard-panel">
             <div className="panel-head small-head">
-              <h3>Key stats</h3>
+              <h3>Water quality</h3>
             </div>
             <div className="stats-stack">
-              {dashboardStats.map((item) => (
-                <div key={item.label} className="stat-box">
-                  <span>{item.label}</span>
-                  <strong>{item.value}</strong>
-                </div>
-              ))}
+              <div className="stat-box">
+                <span>pH</span>
+                <strong>{report?.ph ?? '7.4'}</strong>
+              </div>
+              <div className="stat-box">
+                <span>Turbidity</span>
+                <strong>{report?.turbidity ?? '1.2'} NTU</strong>
+              </div>
+              <div className="stat-box">
+                <span>Chlorine</span>
+                <strong>{report?.chlorine ?? '0.9'} ppm</strong>
+              </div>
             </div>
           </section>
 
           <section className="dashboard-panel wide-panel">
             <div className="panel-head">
-              <h3>Recent alerts</h3>
+              <h3>Alerts & availability</h3>
             </div>
             <div className="alert-list">
               <div>
@@ -270,10 +454,61 @@ function App() {
                 <small>Chlorine below target threshold</small>
               </div>
               <div>
-                <strong>Central Treatment</strong>
-                <small>Flow rate increased by 12%</small>
+                <strong>Water availability</strong>
+                <small>{report ? `${report.quality}% served` : '94% available'} across the district</small>
               </div>
             </div>
+          </section>
+
+          <section className="dashboard-panel full-width-panel">
+            <div className="panel-head">
+              <h3>Live location report</h3>
+              <button type="button" className="secondary-button small-button" onClick={detectLocation} disabled={locationLoading}>
+                {locationLoading ? 'Detecting...' : 'Refresh location'}
+              </button>
+            </div>
+
+            {locationError && <p className="location-warning">{locationError}</p>}
+
+            {report ? (
+              <div className="report-box dashboard-report-box">
+                <div className="report-header">
+                  <div>
+                    <span className="report-label">Location</span>
+                    <strong>{report.area}</strong>
+                  </div>
+                  <span className="status-pill success">{report.status}</span>
+                </div>
+
+                <div className="location-details">
+                  <span>Live coordinates</span>
+                  <strong>{report.latitude.toFixed(4)}°, {report.longitude.toFixed(4)}°</strong>
+                </div>
+
+                <div className="report-grid">
+                  <div>
+                    <span>Water quality</span>
+                    <strong>{report.quality}%</strong>
+                  </div>
+                  <div>
+                    <span>pH</span>
+                    <strong>{report.ph}</strong>
+                  </div>
+                  <div>
+                    <span>Turbidity</span>
+                    <strong>{report.turbidity} NTU</strong>
+                  </div>
+                  <div>
+                    <span>Chlorine</span>
+                    <strong>{report.chlorine} ppm</strong>
+                  </div>
+                </div>
+
+                <p>{report.summary}</p>
+              </div>
+            ) : (
+              <p className="empty-report">Detecting your location to show the current water quality.</p>
+            )}
           </section>
         </main>
       </div>
@@ -298,7 +533,7 @@ function App() {
           <a href="#contact">Contact</a>
         </nav>
 
-        <button className="primary-button" onClick={() => setView('login')}>
+        <button className="primary-button" onClick={() => setView('auth')}>
           Login
         </button>
       </header>
@@ -371,7 +606,7 @@ function App() {
             </p>
 
             <div className="cta-row">
-              <button className="primary-button" onClick={() => setView('login')}>
+              <button className="primary-button" onClick={() => setView('auth')}>
                 Get started
               </button>
               <button className="secondary-button" onClick={() => setView('dashboard')}>
@@ -512,7 +747,7 @@ function App() {
             <span className="eyebrow">Impact that matters</span>
             <h2>Reduce waste, improve confidence, and protect lives.</h2>
           </div>
-          <button className="primary-button" onClick={() => setView('login')}>
+          <button className="primary-button" onClick={() => setView('auth')}>
             Talk to our team
           </button>
         </section>
