@@ -141,6 +141,10 @@ function readStoredUsers(): StoredUser[] {
   }
 }
 
+function findLocalUserByEmail(email: string): StoredUser | undefined {
+  return readStoredUsers().find((entry) => entry.email.toLowerCase() === email.toLowerCase());
+}
+
 function getProfileFromSupabaseUser(user: { id?: string; email?: string | null; user_metadata?: { full_name?: string } | null; created_at?: string | null } | null | undefined): UserProfile | null {
   if (!user) {
     return null;
@@ -377,7 +381,7 @@ function App() {
           );
         }
 
-        saveUserToLocalStorage(nextProfile);
+        saveUserToLocalStorage(nextProfile, trimmedPassword);
         setUser(nextProfile);
         setError('');
         setFormData({ fullName: '', email: '', password: '' });
@@ -391,6 +395,24 @@ function App() {
       });
 
       if (signInError) {
+        const localUser = findLocalUserByEmail(trimmedEmail);
+
+        if (localUser && localUser.password === trimmedPassword) {
+          const loggedInProfile = {
+            id: localUser.id,
+            name: localUser.name,
+            email: localUser.email,
+            createdAt: localUser.createdAt,
+          };
+
+          saveUserToLocalStorage(loggedInProfile, trimmedPassword);
+          setUser(loggedInProfile);
+          setError('');
+          setFormData({ fullName: '', email: '', password: '' });
+          setView('dashboard');
+          return;
+        }
+
         throw signInError;
       }
 
