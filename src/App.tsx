@@ -40,7 +40,9 @@ const contactPhoneDial = contactPhone.replace(/\s+/g, '');
 const talkToTeamHref = `mailto:${contactEmail}?subject=${encodeURIComponent('JalRakshak inquiry')}&body=${encodeURIComponent(`Hello JalRakshak team,\n\nI would like to connect with your team. Please contact me at ${contactPhone}.`)}`;
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+const isPlaceholderSupabaseValue = (value?: string) =>
+  typeof value !== 'string' || value.trim() === '' || value.includes('your-project-id') || value.includes('your-supabase-anon-key');
+const supabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey && !isPlaceholderSupabaseValue(supabaseUrl) && !isPlaceholderSupabaseValue(supabaseAnonKey));
 const supabase = supabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
