@@ -29,7 +29,15 @@ type UserProfile = {
   createdAt: string;
 };
 
+type StoredUser = UserProfile & {
+  password?: string;
+};
+
 const areaNames = ['North District', 'Riverside', 'Lakeview', 'Green Valley', 'South Ward', 'Harbor City'];
+const contactEmail = 'lokeshjhuria7@gmail.com';
+const contactPhone = '+91 9257944985';
+const contactPhoneDial = contactPhone.replace(/\s+/g, '');
+const talkToTeamHref = `mailto:${contactEmail}?subject=${encodeURIComponent('JalRakshak inquiry')}&body=${encodeURIComponent(`Hello JalRakshak team,\n\nI would like to connect with your team. Please contact me at ${contactPhone}.`)}`;
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
@@ -120,14 +128,14 @@ const dashboardStats = [
 
 const authStorageKey = 'jalrakshak-users';
 
-function readStoredUsers(): UserProfile[] {
+function readStoredUsers(): StoredUser[] {
   if (typeof window === 'undefined') {
     return [];
   }
 
   try {
     const saved = window.localStorage.getItem(authStorageKey);
-    return saved ? (JSON.parse(saved) as UserProfile[]) : [];
+    return saved ? (JSON.parse(saved) as StoredUser[]) : [];
   } catch {
     return [];
   }
@@ -256,14 +264,14 @@ function App() {
     );
   };
 
-  const saveUserToLocalStorage = (profile: UserProfile) => {
+  const saveUserToLocalStorage = (profile: UserProfile, password?: string) => {
     if (typeof window === 'undefined') {
       return;
     }
 
     const users = readStoredUsers();
     const filteredUsers = users.filter((entry) => entry.email.toLowerCase() !== profile.email.toLowerCase());
-    filteredUsers.push(profile);
+    filteredUsers.push({ ...profile, ...(password ? { password } : {}) });
     window.localStorage.setItem(authStorageKey, JSON.stringify(filteredUsers));
     window.localStorage.setItem('jalrakshak-current-user', JSON.stringify(profile));
   };
@@ -285,17 +293,63 @@ function App() {
       return;
     }
 
-    if (!supabaseConfigured || !supabase) {
-      setError('Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your environment variables.');
-      return;
-    }
-
     const profile: UserProfile = {
       id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}`,
       name: trimmedName || 'JalRakshak User',
       email: trimmedEmail,
       createdAt: new Date().toISOString(),
     };
+
+    if (!supabaseConfigured || !supabase) {
+      const localUsers = readStoredUsers();
+
+      try {
+        if (authMode === 'signup') {
+          const existingUser = localUsers.find((entry) => entry.email.toLowerCase() === trimmedEmail.toLowerCase());
+          if (existingUser) {
+            setError('An account already exists with this email. Please log in instead.');
+            return;
+          }
+
+          saveUserToLocalStorage(profile, trimmedPassword);
+          setUser(profile);
+          setError('');
+          setFormData({ fullName: '', email: '', password: '' });
+          setView('dashboard');
+          return;
+        }
+
+        const savedUser = localUsers.find((entry) => entry.email.toLowerCase() === trimmedEmail.toLowerCase());
+
+        if (!savedUser) {
+          setError('No account found for this email. Please sign up first.');
+          return;
+        }
+
+        if (savedUser.password !== trimmedPassword) {
+          setError('Invalid email or password.');
+          return;
+        }
+
+        const loggedInProfile = {
+          id: savedUser.id,
+          name: savedUser.name,
+          email: savedUser.email,
+          createdAt: savedUser.createdAt,
+        };
+
+        saveUserToLocalStorage(loggedInProfile);
+        setUser(loggedInProfile);
+        setError('');
+        setFormData({ fullName: '', email: '', password: '' });
+        setView('dashboard');
+      } catch (authError) {
+        const message = authError instanceof Error ? authError.message : 'Authentication failed.';
+        setError(message);
+      }
+
+      return;
+    }
 
     try {
       if (authMode === 'signup') {
@@ -828,9 +882,17 @@ function App() {
             <span className="eyebrow">Impact that matters</span>
             <h2>Reduce waste, improve confidence, and protect lives.</h2>
           </div>
-          <button className="primary-button" onClick={() => setView('auth')}>
+          <a
+            className="primary-button"
+            href={talkToTeamHref}
+            onClick={() => {
+              if (typeof window !== 'undefined') {
+                window.location.href = talkToTeamHref;
+              }
+            }}
+          >
             Talk to our team
-          </button>
+          </a>
         </section>
       </main>
 
@@ -864,8 +926,8 @@ function App() {
 
             <div className="footer-column">
               <h3>Contact</h3>
-              <a href="mailto:hello@jalrakshak.com">hello@jalrakshak.com</a>
-              <a href="tel:+18005551234">+1 (800) 555-1234</a>
+              <a href={`mailto:${contactEmail}`}>{contactEmail}</a>
+              <a href={`tel:${contactPhoneDial}`}>{contactPhone}</a>
               <span>24/7 public safety support</span>
             </div>
           </div>
