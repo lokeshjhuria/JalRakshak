@@ -626,32 +626,21 @@ function App() {
 
           <div className="hero-panel">
             <div className="panel-glow" />
-            <div className="dashboard-card">
-              <div className="card-header">
+            <div className="dashboard-card hero-visual-card">
+              <img
+                className="hero-visual-image"
+                src="https://images.unsplash.com/photo-1541888946425-d81bb19240f5?auto=format&fit=crop&w=1200&q=80"
+                alt="Water treatment plant and clean water infrastructure"
+              />
+
+              <div className="floating-badge top-badge">
                 <span>Water Health Index</span>
-                <span className="status-pill success">Stable</span>
+                <strong>96%</strong>
               </div>
 
-              <div className="score-ring">
-                <div className="score-core">
-                  <strong>96%</strong>
-                  <span>Safe</span>
-                </div>
-              </div>
-
-              <div className="mini-stats">
-                <div>
-                  <label>pH</label>
-                  <strong>7.4</strong>
-                </div>
-                <div>
-                  <label>Turbidity</label>
-                  <strong>1.2 NTU</strong>
-                </div>
-                <div>
-                  <label>Chlorine</label>
-                  <strong>0.9 ppm</strong>
-                </div>
+              <div className="floating-badge bottom-badge">
+                <span>Live status</span>
+                <strong>Stable</strong>
               </div>
             </div>
           </div>
