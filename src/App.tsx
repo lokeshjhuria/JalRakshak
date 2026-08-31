@@ -32,7 +32,16 @@ type UserProfile = {
 const areaNames = ['North District', 'Riverside', 'Lakeview', 'Green Valley', 'South Ward', 'Harbor City'];
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
+const supabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+const supabase = supabaseConfigured
+  ? createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+    })
+  : null;
 
 function getNearestZone(latitude: number, longitude: number): string {
   const zoneIndex = Math.abs(Math.round(latitude + longitude)) % areaNames.length;
@@ -124,6 +133,21 @@ function readStoredUsers(): UserProfile[] {
   }
 }
 
+function getProfileFromSupabaseUser(user: { id?: string; email?: string | null; user_metadata?: { full_name?: string } | null; created_at?: string | null } | null | undefined): UserProfile | null {
+  if (!user) {
+    return null;
+  }
+
+  const email = user.email ?? '';
+
+  return {
+    id: user.id ?? `${Date.now()}`,
+    name: user.user_metadata?.full_name || email.split('@')[0] || 'JalRakshak User',
+    email,
+    createdAt: user.created_at ?? new Date().toISOString(),
+  };
+}
+
 function App() {
   const [view, setView] = useState<View>('landing');
   const [authMode, setAuthMode] = useState<AuthMode>('login');
@@ -135,15 +159,65 @@ function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
+    const restoreSession = async () => {
+      if (typeof window === 'undefined') {
+        return;
+      }
+
+      if (supabase) {
+        const { data: { session }, error } = await supabase.auth.getSession();
+
+        if (error) {
+          console.warn('Supabase session restore failed:', error.message);
+        }
+
+        if (session?.user) {
+          const nextUser = getProfileFromSupabaseUser(session.user);
+          if (nextUser) {
+            setUser(nextUser);
+            setView('dashboard');
+            saveUserToLocalStorage(nextUser);
+          }
+          return;
+        }
+      }
+
+      const storedUser = window.localStorage.getItem('jalrakshak-current-user');
+      if (storedUser) {
+        const parsedUser = JSON.parse(storedUser) as UserProfile;
+        setUser(parsedUser);
+        setView('dashboard');
+      }
+    };
+
+    restoreSession();
+  }, []);
+
+  useEffect(() => {
+    if (!supabase) {
       return;
     }
 
-    const storedUser = window.localStorage.getItem('jalrakshak-current-user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser) as UserProfile);
-      setView('dashboard');
-    }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        const nextUser = getProfileFromSupabaseUser(session?.user ?? null);
+
+        if (nextUser) {
+          setUser(nextUser);
+          setView('dashboard');
+          saveUserToLocalStorage(nextUser);
+        }
+      }
+
+      if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setView('landing');
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -211,6 +285,11 @@ function App() {
       return;
     }
 
+    if (!supabaseConfigured || !supabase) {
+      setError('Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your environment variables.');
+      return;
+    }
+
     const profile: UserProfile = {
       id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}`,
       name: trimmedName || 'JalRakshak User',
@@ -219,55 +298,68 @@ function App() {
     };
 
     try {
-      if (supabase) {
-        if (authMode === 'signup') {
-          const { data, error: signUpError } = await supabase.auth.signUp({
-            email: trimmedEmail,
-            password: trimmedPassword,
-            options: { data: { full_name: profile.name } },
-          });
+      if (authMode === 'signup') {
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email: trimmedEmail,
+          password: trimmedPassword,
+          options: { data: { full_name: profile.name } },
+        });
 
-          if (signUpError) {
-            throw signUpError;
-          }
-
-          if (data.user) {
-            profile.id = data.user.id;
-            await supabase.from('profiles').upsert({
-              id: profile.id,
-              full_name: profile.name,
-              email: profile.email,
-              created_at: profile.createdAt,
-            });
-          }
-        } else {
-          const { data, error: signInError } = await supabase.auth.signInWithPassword({
-            email: trimmedEmail,
-            password: trimmedPassword,
-          });
-
-          if (signInError) {
-            throw signInError;
-          }
-
-          if (data.user) {
-            profile.id = data.user.id;
-            profile.name = data.user.user_metadata?.full_name || profile.name;
-          }
+        if (signUpError) {
+          throw signUpError;
         }
-      }
-    } catch (supabaseError) {
-      console.warn('Supabase auth unavailable, using local fallback:', supabaseError);
-    }
 
-    saveUserToLocalStorage(profile);
-    setUser(profile);
-    setError('');
-    setFormData({ fullName: '', email: '', password: '' });
-    setView('dashboard');
+        const nextProfile = getProfileFromSupabaseUser(data.user) ?? profile;
+
+        if (data.user) {
+          await supabase.from('profiles').upsert(
+            {
+              id: nextProfile.id,
+              full_name: nextProfile.name,
+              email: nextProfile.email,
+              created_at: nextProfile.createdAt,
+            },
+            { onConflict: 'id' },
+          );
+        }
+
+        saveUserToLocalStorage(nextProfile);
+        setUser(nextProfile);
+        setError('');
+        setFormData({ fullName: '', email: '', password: '' });
+        setView('dashboard');
+        return;
+      }
+
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email: trimmedEmail,
+        password: trimmedPassword,
+      });
+
+      if (signInError) {
+        throw signInError;
+      }
+
+      const nextProfile = getProfileFromSupabaseUser(data.user) ?? profile;
+      saveUserToLocalStorage(nextProfile);
+      setUser(nextProfile);
+      setError('');
+      setFormData({ fullName: '', email: '', password: '' });
+      setView('dashboard');
+    } catch (authError) {
+      const message = authError instanceof Error ? authError.message : 'Authentication failed.';
+      setError(message.includes('Invalid login credentials') ? 'Invalid email or password.' : message);
+    }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    if (supabase) {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.warn('Supabase sign-out failed:', error.message);
+      }
+    }
+
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem('jalrakshak-current-user');
     }
