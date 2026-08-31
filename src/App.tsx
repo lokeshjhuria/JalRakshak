@@ -754,14 +754,49 @@ function App() {
       </main>
 
       <footer id="contact" className="footer">
-        <div>
-          <span className="brand-name">JalRakshak</span>
-          <p>Smart monitoring for resilient water ecosystems.</p>
+        <div className="footer-card">
+          <div className="footer-brand-wrap">
+            <div className="brand-wrap">
+              <div className="brand-icon">J</div>
+              <div>
+                <span className="brand-name">JalRakshak</span>
+                <small>Water intelligence</small>
+              </div>
+            </div>
+            <p>Smart monitoring for resilient water ecosystems, helping communities protect every drop with confidence.</p>
+          </div>
+
+          <div className="footer-grid">
+            <div className="footer-column">
+              <h3>Company</h3>
+              <a href="#features">Features</a>
+              <a href="#solutions">Solutions</a>
+              <a href="#impact">Impact</a>
+            </div>
+
+            <div className="footer-column">
+              <h3>Resources</h3>
+              <a href="#">Monitoring</a>
+              <a href="#">Safety standards</a>
+              <a href="#">Operational alerts</a>
+            </div>
+
+            <div className="footer-column">
+              <h3>Contact</h3>
+              <a href="mailto:hello@jalrakshak.com">hello@jalrakshak.com</a>
+              <a href="tel:+18005551234">+1 (800) 555-1234</a>
+              <span>24/7 public safety support</span>
+            </div>
+          </div>
         </div>
-        <div className="footer-links">
-          <a href="#features">Features</a>
-          <a href="#solutions">Solutions</a>
-          <a href="#impact">Impact</a>
+
+        <div className="footer-bottom">
+          <span>© 2026 JalRakshak. All rights reserved.</span>
+          <div className="footer-meta">
+            <a href="#">Privacy</a>
+            <a href="#">Terms</a>
+            <a href="#">Accessibility</a>
+          </div>
         </div>
       </footer>
     </div>
