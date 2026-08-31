@@ -171,6 +171,13 @@ function App() {
   const [locationLoading, setLocationLoading] = useState(false);
   const [locationError, setLocationError] = useState('');
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+
+  useEffect(() => {
+    document.body.classList.toggle('dark-theme', theme === 'dark');
+    document.body.classList.toggle('light-theme', theme === 'light');
+    document.documentElement.style.colorScheme = theme;
+  }, [theme]);
 
   useEffect(() => {
     const restoreSession = async () => {
@@ -547,6 +554,14 @@ function App() {
           </div>
 
           <div className="dashboard-actions">
+            <button
+              type="button"
+              className="theme-toggle"
+              onClick={() => setTheme((current) => (current === 'light' ? 'dark' : 'light'))}
+              aria-label="Toggle light and dark mode"
+            >
+              {theme === 'light' ? '🌙 Dark' : '☀️ Light'}
+            </button>
             <span className="status-pill success">Online</span>
             <button className="secondary-button" onClick={handleLogout}>Logout</button>
           </div>
@@ -703,9 +718,19 @@ function App() {
           <a href="#contact">Contact</a>
         </nav>
 
-        <button className="primary-button" onClick={() => setView('auth')}>
-          Login
-        </button>
+        <div className="header-actions">
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={() => setTheme((current) => (current === 'light' ? 'dark' : 'light'))}
+            aria-label="Toggle light and dark mode"
+          >
+            {theme === 'light' ? '🌙 Dark' : '☀️ Light'}
+          </button>
+          <button className="primary-button" onClick={() => setView('auth')}>
+            Login
+          </button>
+        </div>
       </header>
 
       <main>
